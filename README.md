@@ -1,3 +1,336 @@
+# Bigs Payments PG Integration
+
+Spring Boot 기반의 PG 결제 연동 시스템입니다. 멀티 PG 전략과 제휴사별 수수료 정책을 지원합니다.
+
+## 목차
+- [주요 기능](#주요-기능)
+- [아키텍처 설계](#아키텍처-설계)
+- [핵심 컴포넌트](#핵심-컴포넌트)
+- [API 명세](#api-명세)
+- [운영 및 모니터링](#운영-및-모니터링)
+- [개발 환경](#개발-환경)
+
+---
+
+**기술 스택**
+- Spring Boot
+- Kotlin
+- H2 Database (개발), MariaDB (운영 예정)
+- Hexagonal Architecture
+
+---
+
+## 주요 기능
+
+### 결제 처리
+- 실시간 PG 승인 요청 및 응답 처리
+- Primary/Secondary PG 자동 전환 (MultiAttempt)
+- 제휴사별 차등 수수료 정책 적용
+
+### 결제 조회
+- 커서 기반 페이지네이션
+- 기간별/상태별 필터링
+- 실시간 통계 집계 (건수, 총액, 정산액)
+
+### 시뮬레이션
+- Mock PG 클라이언트 제공
+- 다양한 결제 실패 시나리오 테스트
+- 카드 번호/금액 기반 응답 분기
+
+---
+
+## 아키텍처 설계
+
+헥사고날 아키텍처 패턴을 적용하여 비즈니스 로직과 외부 의존성을 분리했습니다.
+
+```
+┌─────────────────────────────────────────┐
+│          API Layer (Controller)         │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│     Application Layer (Use Cases)       │
+│  - PaymentService                       │
+│  - QueryPaymentsUseCase                 │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│         Domain Layer (Entities)         │
+│  - Payment, PaymentStatus               │
+│  - FeeCalculator                        │
+└──────────────┬──────────────────────────┘
+               │
+┌──────────────▼──────────────────────────┐
+│    Adapter Layer (Infrastructure)       │
+│  - TestPgAdapter                        │
+│  - SimulatedPgClient                    │
+│  - MultiAttemptPgClient                 │
+└─────────────────────────────────────────┘
+```
+
+**포트 인터페이스**
+- `PgClientOutPort`: PG 승인 요청
+- `PartnerOutPort`: 제휴사 정보 조회
+- `FeePolicyOutPort`: 수수료 정책 조회
+- `PaymentOutPort`: 결제 데이터 영속화
+
+---
+
+## 핵심 컴포넌트
+
+### PaymentService
+결제 생성 및 승인 처리의 중심 유스케이스입니다.
+
+**처리 흐름**
+1. 제휴사 유효성 검증
+2. PG 클라이언트 선택
+3. 결제 승인 요청
+4. 수수료 정책 적용 및 계산
+5. 결제 정보 저장
+
+### MultiAttemptPgClient
+Primary PG 실패 시 자동으로 Secondary PG로 전환하는 Fallback 전략을 구현합니다.
+
+```kotlin
+// 의사코드
+fun approve(request):
+  result = attempt(primaryClient, request)
+  if result != null:
+    return result
+  
+  result = attempt(secondaryClient, request)
+  if result != null:
+    return result
+  
+  throw AllPgFailedException()
+```
+
+### SimulatedPgClient
+실제 PG 연동 없이 다양한 시나리오를 테스트할 수 있습니다.
+
+**지원 에러 케이스**
+- `STOLEN_CARD`: 도난카드
+- `LIMIT_EXCEEDED`: 한도초과
+- `EXPIRED`: 유효기간만료
+- `TAMPERED`: 위변조 의심
+
+### FeeCalculator
+제휴사별 수수료 정책을 기반으로 수수료와 정산금을 계산합니다.
+
+```
+수수료 = (결제금액 × 수수료율) + 고정수수료
+정산금 = 결제금액 - 수수료
+```
+
+---
+
+## API 명세
+
+### 결제 생성
+
+**Endpoint**
+```
+POST /api/v1/payments
+```
+
+**Request**
+```json
+{
+  "partnerId": 1,
+  "amount": 10000,
+  "cardBin": "123456",
+  "cardLast4": "1234",
+  "productName": "테스트 상품"
+}
+```
+
+**Response (partnerId=1)**
+```json
+{
+  "id": 1,
+  "partnerId": 1,
+  "amount": 10000,
+  "appliedFeeRate": 0.0235,
+  "feeAmount": 235,
+  "netAmount": 9765,
+  "cardLast4": "1234",
+  "approvalCode": "10068420",
+  "approvedAt": "2025-10-05T15:41:55",
+  "status": "APPROVED",
+  "createdAt": "2025-10-06T00:41:55"
+}
+```
+
+**Response (partnerId=2)**
+```json
+{
+  "id": 2,
+  "partnerId": 2,
+  "amount": 10000,
+  "appliedFeeRate": 0.03,
+  "feeAmount": 400,
+  "netAmount": 9600,
+  "cardLast4": "1111",
+  "approvalCode": "36861800",
+  "approvedAt": "2025-10-05T15:42:24",
+  "status": "APPROVED",
+  "createdAt": "2025-10-06T00:42:24"
+}
+```
+
+### 결제 조회
+
+**Endpoint**
+```
+GET /api/v1/payments
+```
+
+**Query Parameters**
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| partnerId | Long | N | 제휴사 ID |
+| status | String | N | 결제 상태 (APPROVED, FAILED) |
+| from | DateTime | N | 조회 시작일시 |
+| to | DateTime | N | 조회 종료일시 |
+| cursor | String | N | 페이지네이션 커서 |
+| pageSize | Int | N | 페이지 크기 (기본 20) |
+
+**Response**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "partnerId": 2,
+      "amount": 10000,
+      "appliedFeeRate": 0.03,
+      "feeAmount": 300,
+      "netAmount": 9700,
+      "cardBin": "1111",
+      "cardLast4": "1111",
+      "approvalCode": "APPR001",
+      "approvedAt": "2025-10-05T12:00:00",
+      "status": "APPROVED",
+      "createdAt": "2025-10-05T12:00:00",
+      "updatedAt": "2025-10-05T12:00:00"
+    }
+  ],
+  "summary": {
+    "count": 2,
+    "totalAmount": 30000,
+    "totalNetAmount": 29100
+  },
+  "nextCursor": "cursor_1",
+  "hasNext": false
+}
+```
+
+---
+
+## 운영 및 모니터링
+
+### 로깅 전략
+
+주요 이벤트별 로그 레벨과 형식을 정의했습니다.
+
+**결제 승인 프로세스**
+```
+[INFO] [MultiAttempt] 승인 시작: partnerId=2, amount=10000
+[WARN] [MultiAttempt] TestPgAdapter 실패: Card not supported
+[INFO] [MultiAttempt] SimulatedPgClient 성공: approvalCode=APPR001
+[INFO] [PG-SIM] partnerId=2, amount=10000
+```
+
+**로그 레벨 가이드**
+- `ERROR`: PG 전체 실패, 시스템 오류
+- `WARN`: Primary PG 실패 (Secondary로 전환)
+- `INFO`: 정상 승인, 주요 비즈니스 이벤트
+- `DEBUG`: 상세 처리 과정, 개발용 정보
+
+---
+
+## 개발 환경
+
+### 로컬 실행
+
+```bash
+# 애플리케이션 실행
+./gradlew bootRun
+
+# 테스트 실행
+./gradlew test
+```
+
+### 데이터베이스
+
+**현재 환경**
+- H2 In-Memory Database (개발/테스트)
+
+**운영 환경 (시나리오)**
+- MariaDB 10.6+
+- Docker Compose를 통한 로컬 개발 환경 구축
+- Flyway/Liquibase를 활용한 스키마 마이그레이션
+
+**마이그레이션 준비사항**
+```yaml
+# docker-compose.yml
+services:
+  mariadb:
+    image: mariadb:10.6
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: payments
+    ports:
+      - "3306:3306"
+```
+
+### 환경 변수
+
+```properties
+# application.yml
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+```
+
+---
+
+## 테스트 환경
+
+### Mock 데이터
+
+MockQueryPaymentsUseCase를 통해 테스트용 결제 데이터를 제공합니다.
+
+### 시뮬레이션 카드
+
+SimulatedPgClient에서 다양한 테스트 시나리오를 지원합니다:
+
+- 정상 승인: 1111-****-****-1111
+- 도난카드: 9999-****-****-9999
+- 한도초과: 금액 1,000,000원 초과 시
+- 유효기간만료: 특정 카드 번호 패턴
+
+---
+
+## 이후 하면 좋을 작업들
+
+- [ ] MariaDB 전환 및 Docker Compose 환경 구축
+- [ ] Flyway 기반 스키마 마이그레이션 도입
+- [ ] 실시간 모니터링 대시보드 (Grafana + Prometheus)
+- [ ] 정산 자동화 배치 작업
+
+---
+
+## 라이선스
+
+Internal Use Only
+
+
 # 백엔드 사전 과제 – 결제 도메인 서버
 
 본 과제는 나노바나나 페이먼츠의 “결제 도메인 서버”를 주제로, 백엔드 개발자의 설계·구현·테스트 역량을 평가하기 위한 사전 과제입니다. 제공된 멀티모듈 + 헥사고널 아키텍처 기반 코드를 바탕으로 요구사항을 충족하는 기능을 완성해 주세요.
