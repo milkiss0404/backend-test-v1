@@ -39,5 +39,5 @@ logging:
 pg:
   test:
     api-url: https://api-test-pg.bigs.im
-    api-key: ""
-    iv: ""
+    api-key: ${PG_TEST_API_KEY}
+    api-iv: ${PG_TEST_API_IV}

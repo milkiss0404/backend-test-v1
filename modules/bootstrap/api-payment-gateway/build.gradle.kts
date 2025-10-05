@@ -22,4 +22,5 @@ dependencies {
 
     implementation(libs.springdoc.openapi.starter.webmvc.ui)
     implementation(libs.database.h2)
+    implementation(libs.spring.dotenv)
 }
