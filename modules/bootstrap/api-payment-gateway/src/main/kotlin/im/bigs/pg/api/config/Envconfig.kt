@@ -1,5 +1,6 @@
 package im.bigs.pg.api.config
 
+    import org.springframework.boot.context.properties.ConfigurationPropertiesScan
     import org.springframework.context.annotation.Configuration
     import org.springframework.context.annotation.PropertySource
     import org.springframework.context.annotation.PropertySources
@@ -8,5 +9,6 @@ package im.bigs.pg.api.config
     @PropertySources(
         PropertySource(value = ["file:.env"], ignoreResourceNotFound = true)
     )
+    @ConfigurationPropertiesScan
     class EnvConfig {
     }

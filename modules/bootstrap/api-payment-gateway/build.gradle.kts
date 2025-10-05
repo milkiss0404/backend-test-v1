@@ -22,5 +22,5 @@ dependencies {
 
     implementation(libs.springdoc.openapi.starter.webmvc.ui)
     implementation(libs.database.h2)
-    implementation(libs.spring.dotenv)
+    implementation("me.paulschwarz:spring-dotenv:4.0.0") // 최신 버전
 }

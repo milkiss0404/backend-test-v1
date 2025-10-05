@@ -1,6 +1,5 @@
 package im.bigs.pg.api.payment
 
-import com.sun.tools.javac.code.Symbol
 import im.bigs.pg.application.payment.port.`in`.PaymentUseCase
 import im.bigs.pg.application.payment.port.`in`.PaymentCommand
 import im.bigs.pg.application.payment.port.`in`.*
