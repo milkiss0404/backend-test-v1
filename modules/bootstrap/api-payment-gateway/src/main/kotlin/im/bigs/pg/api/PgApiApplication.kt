@@ -5,6 +5,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 import io.swagger.v3.oas.annotations.info.Info
 import io.swagger.v3.oas.annotations.servers.Server
+import org.springframework.context.annotation.Bean
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
+import org.springframework.web.client.RestTemplate
 
 /**
  * API 실행 진입점. bootstrap 모듈은 실행/환경설정만을 담당합니다.
@@ -23,8 +26,19 @@ import io.swagger.v3.oas.annotations.servers.Server
     ]
 )
 @SpringBootApplication(scanBasePackages = ["im.bigs.pg"])
-class PgApiApplication
+class PgApiApplication {
 
-fun main(args: Array<String>) {
-    runApplication<PgApiApplication>(*args)
+    fun main(args: Array<String>) {
+        runApplication<PgApiApplication>(*args)
+    }
+
+    @Bean
+    fun restTemplate(): RestTemplate {
+        return RestTemplate().apply {
+            requestFactory = HttpComponentsClientHttpRequestFactory().apply {
+                setConnectTimeout(60000) // 연결 타임아웃 60초
+                setReadTimeout(60000)    // 읽기 타임아웃 60초
+            }
+        }
+    }
 }
