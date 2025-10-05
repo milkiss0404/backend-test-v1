@@ -128,6 +128,8 @@ fun approve(request):
 
 ### 결제 생성
 
+![결제 생성 스웨거 시연](https://github.com/user-attachments/assets/b0479af6-ca90-44c7-b416-a407a440105e)
+
 **Endpoint**
 ```
 POST /api/v1/payments
@@ -179,6 +181,8 @@ POST /api/v1/payments
 ```
 
 ### 결제 조회
+
+![결제 조회 스웨거 시연](https://github.com/user-attachments/assets/639e5748-73a1-4674-a4b0-4692c00aee69)
 
 **Endpoint**
 ```
