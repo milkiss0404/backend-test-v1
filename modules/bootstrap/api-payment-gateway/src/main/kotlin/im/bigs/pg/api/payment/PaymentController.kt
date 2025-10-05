@@ -1,5 +1,6 @@
 package im.bigs.pg.api.payment
 
+import com.sun.tools.javac.code.Symbol
 import im.bigs.pg.application.payment.port.`in`.PaymentUseCase
 import im.bigs.pg.application.payment.port.`in`.PaymentCommand
 import im.bigs.pg.application.payment.port.`in`.*
@@ -7,6 +8,11 @@ import im.bigs.pg.api.payment.dto.CreatePaymentRequest
 import im.bigs.pg.api.payment.dto.PaymentResponse
 import im.bigs.pg.api.payment.dto.QueryResponse
 import im.bigs.pg.api.payment.dto.Summary
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.Parameter
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
+import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.validation.annotation.Validated
@@ -16,13 +22,20 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.Instant
 import java.time.LocalDateTime
+import im.bigs.pg.application.payment.port.`in`.QueryFilter
+import im.bigs.pg.application.payment.port.`in`.QueryPaymentsUseCase
+import io.swagger.v3.oas.annotations.media.Content
+import io.swagger.v3.oas.annotations.media.Schema
+import java.time.ZoneOffset
 
 /**
  * 결제 API 진입점.
  * - POST: 결제 생성
  * - GET: 결제 조회(커서 페이지네이션 + 통계)
  */
+@Tag(name = "결제 API", description = "결제 생성, 조회(커서 페이지네이션 + 통계) API")
 @RestController
 @RequestMapping("/api/v1/payments")
 @Validated
@@ -44,6 +57,13 @@ class PaymentController(
      * @return 생성된 결제 요약 응답
      */
     @PostMapping
+    @Operation(summary = "결제 생성", description = "신규 결제 생성.")
+    @ApiResponses(
+        value = [
+            ApiResponse(responseCode = "200", description = "결제 생성 성공"),
+            ApiResponse(responseCode = "default", description = "예상치 못한 에러")
+        ]
+    )
     fun create(@RequestBody req: CreatePaymentRequest): ResponseEntity<PaymentResponse> {
         val saved = paymentUseCase.pay(
             PaymentCommand(
@@ -72,16 +92,45 @@ class PaymentController(
      * @return 목록/통계/커서 정보
      */
     @GetMapping
+    @Operation(
+        summary = "결제 조회",
+        description = "커서 기반 페이지네이션과 통계 정보를 포함한 결제 목록을 조회합니다."
+    )
+    @ApiResponses(
+        value = [
+            ApiResponse(
+                responseCode = "200",
+                description = "조회 성공",
+                content = [Content(schema = io.swagger.v3.oas.annotations.media.Schema(implementation = QueryResponse::class))]
+            )
+        ]
+    )
     fun query(
+        @Parameter(description = "조회할 제휴사 ID (선택)")
         @RequestParam(required = false) partnerId: Long?,
-        @RequestParam(required = false) status: String?,
-        @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") from: LocalDateTime?,
-        @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") to: LocalDateTime?,
-        @RequestParam(required = false) cursor: String?,
-        @RequestParam(defaultValue = "20") limit: Int,
+
+        @Parameter(description = "결제 처리 상태 (기본: APPROVED)")
+        @RequestParam(required = false, defaultValue = "APPROVED") status: String?,
+
+        @Parameter(description = "검색 시작 날짜/시간 (ISO-8601 형식, 선택)")
+        @RequestParam(required = false, defaultValue = "2025-01-01T00:00:00Z") from: Instant?,
+
+        @Parameter(description = "검색 종료 날짜/시간 (ISO-8601 형식, 선택)")
+        @RequestParam(required = false, defaultValue = "2025-01-01T00:00:00Z") to: Instant?,
+
+        @Parameter(description = "다음 페이지 조회를 위한 커서 값 (선택, 기본: 빈 문자열)")
+        @RequestParam(required = false, defaultValue = "") cursor: String?,
+
+        @Parameter(description = "한 페이지에 표시할 항목 수 (기본: 20, 선택)")
+        @RequestParam(required = false, defaultValue = "20") pageSize: Int,
     ): ResponseEntity<QueryResponse> {
         val res = queryPaymentsUseCase.query(
-            QueryFilter(partnerId, status, from, to, cursor, limit),
+            QueryFilter(partnerId,
+                status,
+                from?.atZone(ZoneOffset.UTC)?.toLocalDateTime(),
+                to?.atZone(ZoneOffset.UTC)?.toLocalDateTime(),
+                cursor,
+                pageSize)
         )
         return ResponseEntity.ok(
             QueryResponse(
