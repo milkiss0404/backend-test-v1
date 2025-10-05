@@ -1,9 +1,14 @@
 package im.bigs.pg.application.payment.service
 
 import im.bigs.pg.application.payment.port.`in`.*
+import im.bigs.pg.application.payment.port.out.PaymentOutPort
+import im.bigs.pg.application.payment.port.out.PaymentQuery
+import im.bigs.pg.application.payment.port.out.PaymentSummaryFilter
+import im.bigs.pg.domain.payment.PaymentStatus
 import im.bigs.pg.domain.payment.PaymentSummary
 import org.springframework.stereotype.Service
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.Base64
 
 /**
@@ -12,7 +17,9 @@ import java.util.Base64
  * - 통계는 조회 조건과 동일한 집합을 대상으로 계산됩니다.
  */
 @Service
-class QueryPaymentsService : QueryPaymentsUseCase {
+class QueryPaymentsService(
+    private val paymentRepository: PaymentOutPort
+) : QueryPaymentsUseCase {
     /**
      * 필터를 기반으로 결제 내역을 조회합니다.
      *
@@ -22,14 +29,51 @@ class QueryPaymentsService : QueryPaymentsUseCase {
      * @param filter 파트너/상태/기간/커서/페이지 크기
      * @return 조회 결과(목록/통계/커서)
      */
-    override fun query(filter: QueryFilter): QueryResult {
-        return QueryResult(
-            items = emptyList(),
-            summary = PaymentSummary(count = 0, totalAmount = java.math.BigDecimal.ZERO, totalNetAmount = java.math.BigDecimal.ZERO),
-            nextCursor = null,
-            hasNext = false,
-        )
-    }
+        override fun query(filter: QueryFilter): QueryResult {
+            // 1. 전달받은 커서 문자열을 내부 값으로 변환
+            val (lastCreatedAt, lastId) = filter.cursor?.let { decodeCursor(it) } ?: Pair(null, null)
+
+            // 2. DB 조회 조건 준비
+            val criteria = PaymentQuery(
+                partnerId = filter.partnerId,
+                status = filter.status?.let { PaymentStatus.valueOf(it) },
+                from = filter.from,
+                to = filter.to,
+                limit = filter.limit.takeIf { it > 0 }?.plus(1) ?: 21, // hasNext 판단용 +1
+                cursorCreatedAt = lastCreatedAt?.atZone(ZoneOffset.UTC)?.toLocalDateTime(),
+                cursorId = lastId
+            )
+
+            // 3. DB에서 결제 목록 조회
+            val resultPage = paymentRepository.findBy(criteria)
+
+            // 4. 필터 기반 통계 계산
+            val stats = paymentRepository.summary(
+                PaymentSummaryFilter(
+                    partnerId = filter.partnerId,
+                    status = filter.status?.let { PaymentStatus.valueOf(it) },
+                    from = filter.from,
+                    to = filter.to
+                )
+            )
+
+            // 5. 다음 페이지 커서 결정
+            val nextPageCursor = resultPage.takeIf { it.hasNext }?.let {
+                encodeCursor(it.nextCursorCreatedAt?.atZone(ZoneOffset.UTC)?.toInstant(), it.nextCursorId)
+            }
+
+            // 6. 최종 결과 반환
+            return QueryResult(
+                items = resultPage.items,
+                summary = PaymentSummary(
+                    count = stats.count,
+                    totalAmount = stats.totalAmount,
+                    totalNetAmount = stats.totalNetAmount
+                ),
+                nextCursor = nextPageCursor,
+                hasNext = resultPage.hasNext
+            )
+        }
 
     /** 다음 페이지 이동을 위한 커서 인코딩. */
     private fun encodeCursor(createdAt: Instant?, id: Long?): String? {
