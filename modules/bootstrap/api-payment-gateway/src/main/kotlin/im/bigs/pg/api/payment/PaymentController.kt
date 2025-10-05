@@ -57,12 +57,12 @@ class PaymentController(
      */
     @PostMapping
     @Operation(summary = "결제 생성", description = "신규 결제 생성.")
-    @ApiResponses(
-        value = [
-            ApiResponse(responseCode = "200", description = "결제 생성 성공"),
-            ApiResponse(responseCode = "default", description = "예상치 못한 에러")
-        ]
-    )
+//    @ApiResponses(
+//        value = [
+//            ApiResponse(responseCode = "200", description = "결제 생성 성공"),
+//            ApiResponse(responseCode = "default", description = "예상치 못한 에러")
+//        ]
+//    )
     fun create(@RequestBody req: CreatePaymentRequest): ResponseEntity<PaymentResponse> {
         val saved = paymentUseCase.pay(
             PaymentCommand(

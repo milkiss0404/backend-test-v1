@@ -42,4 +42,21 @@ class PaymentEntity(
     var createdAt: Instant,
     @Column(nullable = false)
     var updatedAt: Instant,
-)
+){
+    // JPA용 기본 생성자
+    constructor() : this(
+        id = null,
+        partnerId = 0,
+        amount = BigDecimal.ZERO,
+        appliedFeeRate = BigDecimal.ZERO,
+        feeAmount = BigDecimal.ZERO,
+        netAmount = BigDecimal.ZERO,
+        cardBin = null,
+        cardLast4 = null,
+        approvalCode = "",
+        approvedAt = Instant.EPOCH,
+        status = "",
+        createdAt = Instant.EPOCH,
+        updatedAt = Instant.EPOCH
+    )
+}
