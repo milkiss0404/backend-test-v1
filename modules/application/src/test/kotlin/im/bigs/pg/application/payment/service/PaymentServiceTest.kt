@@ -25,7 +25,6 @@ import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-@DataJpaTest
 class 결제서비스Test {
 
     private val partnerRepo = mockk<PartnerOutPort>()
