@@ -11,4 +11,5 @@ interface FeePolicyJpaRepository : JpaRepository<FeePolicyEntity, Long> {
         partnerId: Long,
         at: Instant,
     ): FeePolicyEntity?
+    fun findByPartnerId(partnerId: Long): FeePolicyEntity?
 }
