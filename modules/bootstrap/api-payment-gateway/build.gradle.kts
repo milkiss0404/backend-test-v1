@@ -19,4 +19,7 @@ dependencies {
     }
     testImplementation(libs.spring.mockk)
     testImplementation(libs.database.h2)
+
+    implementation(libs.springdoc.openapi.starter.webmvc.ui)
+    implementation(libs.database.h2)
 }
